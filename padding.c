@@ -13,6 +13,13 @@
 #include <inttypes.h>
 
 
+union block {
+  uint64_t six_four[8];
+  uint32_t three_two[16];
+  uint8_t eight[64];
+};
+
+
 uint64_t nozerobytes(uint64_t nobits) {
   uint64_t result = 512ULL - (nobits % 512ULL);
 
@@ -43,9 +50,13 @@ int main(int argc, char *argv[ ]) {
   uint8_t b;
   uint64_t nobits;
 
+  // instance of block
+  union block m;
+  uint8_t i;
+
   // Reads from the file 1 byte at a time and prints to the screen as a hex digit
-  for(nobits = 0; fread(&b, 1, 1, infile) == 1; nobits += 8) {
-    printf("%02" PRIx8, b);
+  for(nobits = 0, i = 0; fread(&m.eight[i], 1, 1, infile) == 1; nobits += 8) {
+    printf("%02" PRIx8, m.eight[i]);
   }
   
   // Print the 1bit that is added to the end and add the 7 0's to make it a byte
