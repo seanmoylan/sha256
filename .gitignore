@@ -52,3 +52,4 @@ Mkfile.old
 dkms.conf
 padding
 unions
+endian_test
