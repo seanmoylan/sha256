@@ -4,8 +4,9 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <inttypes.h>
 
-
+// Initial Constants
 const uint32_t K[] ={
 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 
@@ -23,10 +24,6 @@ const uint32_t K[] ={
 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 
 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 
 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2} ;
-
-uint32_t H[] = {
-0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
 uint32_t Ch(uint32_t x, uint32_t y, uint32_t z){
   // Section 4.1.2
@@ -69,35 +66,91 @@ uint32_t sig1(uint32_t x){
   return ROTR(x, 17) ^ ROTR(x, 19) ^ SHR(x, 10);
 }
 
-int main(int argc, char *argv[]){
-  uint32_t x = 0x0f0f0f0f;
-  uint32_t y = 0xcccccccc;
-  uint32_t z = 0x55555555;
 
 
-  printf("x          = %08x\n", x);
-  printf("y          = %08x\n", y);
-  printf("z          = %08x\n", z);
+union block {
+  uint64_t six_four[8];
+  uint32_t three_two[16];
+  uint8_t eight[64];
+};
+
+// Used to help nextblock keep track of the status
+enum flag {PAD0, PAD1, READ, FINISH};
 
 
-  printf("Ch(x,y,z)  = %08x\n", Ch(x, y, z));
-  printf("Maj(x,y,z) = %08x\n", Maj(x, y, z));
+uint64_t nozerobytes(uint64_t nobits) {
+  uint64_t result = 512ULL - (nobits % 512ULL);
 
-  printf("SHR(x,2)   = %08x\n", SHR(x, 2));
-  printf("ROTR(x,2)  = %08x\n", ROTR(x, 2));
+  if(result < 65)
+    result += 512;
+  
+  result -= 72;
 
-  printf("Sig0(x)    = %08x\n", Sig0(x));
-  printf("Sig1(x)    = %08x\n", Sig1(x));
-  printf("sig0(x)    = %08x\n", sig0(x));
-  printf("sig1(x)    = %08x\n", sig1(x));
-
-  printf("K[23]      = %08x\n", K[23]);
-  printf("H[3]       = %08x\n", H[3]);
-
-
-
-  Ch(x,y,z);
-
-  return 0;
+  return (result / 8ULL); 
 }
 
+// Nextblock takes in a union pointer and an input file pointer as arguments
+int nextblock(union block *M, FILE *infile, uint64_t *nobits, enum flag *status){
+
+  uint8_t i;
+
+  // Reads from the file 1 byte at a time
+  // fread takes in a pointer to a memory address, the size to be read in bytes,
+  // the number of elements of size bytes and the file to be taken as input. 
+  for(*nobits = 0, i = 0; fread(&m.eight[i], 1, 1, infile) == 1; *nobits += 8) {
+    printf("%02" PRIx8, m.eight[i]);
+  }
+  
+  // Print the 1bit that is added to the end and add the 7 0's to make it a byte
+  printf("%02" PRIx8, 0x80); // Bits: 1000 0000
+
+  for(uint64_t i = nozerobytes(*nobits); i > 0; i--){
+    printf("%02" PRIx8, 0x00);
+  }
+
+  printf("%016" PRIx64, nobits);
+}
+
+void nexthash(union block *M, uint32_t *H ){
+  
+}
+
+int main(int argc, char *argv[ ]) {
+
+  // Gives an error message if no file is passed into the program
+  if(argc != 2) {
+    printf("Error: expected single file name as argument. \n");
+    return 1;
+  }
+
+  // Reads in file passed to the program
+  FILE *infile = fopen(argv[1], "rb");
+  if(!infile){
+    printf("Error: couldn't open file %s.\n",argv[1]);
+    return 1;
+  }
+
+  // The current padded message block
+  union block M;
+
+  // Section 5.3.3
+  uint32_t H[] = {
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+
+  // Read throughall the padded message blocks.
+  while(nextblock(&M, infile)){
+    // Calculate the next hash value
+    nexthash(&M, &H);
+  }
+
+  for(int i = 0; i < 8, i++){
+    printf("%02" PRIx32, H[i]);
+  }
+
+  printf("\n");
+
+  fclose(infile);
+  
+  return 0;
+}
