@@ -67,6 +67,7 @@ uint32_t sig1(uint32_t x){
 }
 
 
+
 // Union allows you to store diffrent data types in the same memory address
 // this union is size 512bits that can be accessed as:
 // 8 x 64 bits
@@ -79,42 +80,67 @@ union block {
   uint8_t eight[64];
 };
 
-// Used to help nextblock keep track of the status
-enum flag {PAD0, PAD1, READ, FINISH};
 
 
-uint64_t nozerobytes(uint64_t nobits) {
-  uint64_t result = 512ULL - (nobits % 512ULL);
+// Used to help nextblock keep track of the status of nextblock
+enum flag {READ, PAD0, PAD1, FINISH};
 
-  if(result < 65)
-    result += 512;
-  
-  result -= 72;
 
-  return (result / 8ULL); 
-}
 
-// Nextblock takes in a union pointer and an input file pointer as arguments
+
+// Nextblock takes in a union pointer, an input file pointer, nobits pointer and an enum status
 int nextblock(union block *M, FILE *infile, uint64_t *nobits, enum flag *status){
 
-  uint8_t i;
+  // Breaks while loop in the main method when nextblock is finished
+  if(*status == FINISH)
+    return 0;
 
-  // Reads from the file 1 byte at a time
+
+  if (*status == PAD0){
+    for(int i = 0; i < 56; i++)
+      M->eight[i] = 0;
+
+    M->six_four[7] = *nobits;
+    status = FINISH;
+    return 1;
+  }
+
+
+
+  // Reads 64 x 1bits and stores them in M.eight
   // fread takes in a pointer to a memory address, the size to be read in bytes,
-  // the number of elements of size bytes and the file to be taken as input. 
-  for(*nobits = 0, i = 0; fread(&M.eight[i], 1, 1, infile) == 1; *nobits += 8) {
-    printf("%02" PRIx8, M.eight[i]);
+  // the number of elements of size bytes and the file to be taken as input.
+  size_t nobytesread = fread(M->eight, 1, 64, infile);
+
+  if(nobytesread == 64)
+    return 1;
+
+  // If we can fit all padding in last block:
+  if(nobytesread < 56){
+    M->eight[nobytesread] = 0x80;
+    for(int i = nobytesread + 1; i < 56; i++)
+      M->eight[i] = 0;
+    M->six_four[7] = *nobits;
+    *status = FINISH;
+    return 1;
+ 
   }
+
+
+  // Otherwise we have read between 56 (incl) and 64 (excl) bytes
+  M->eight[nobytesread] = 0x80;
+  for (int i = nobytesread + 1; i < 64; i++)
+    M->eight[i] = 0;
+
+  *status = PAD0;
+  return 1;
   
-  // Print the 1bit that is added to the end and add the 7 0's to make it a byte
-  printf("%02" PRIx8, 0x80); // Bits: 1000 0000
 
-  for(uint64_t i = nozerobytes(*nobits); i > 0; i--){
-    printf("%02" PRIx8, 0x00);
-  }
-
-  printf("%016" PRIx64, nobits);
+  
 }
+
+
+
 
 // Nexthash takes in the pointer to the current block and array of initial constants
 void nexthash(union block *M, uint32_t *H ){
@@ -158,12 +184,11 @@ void nexthash(union block *M, uint32_t *H ){
     H[7] = f + H[7];
   }
 
-    
-
-
-
 }
 
+
+
+// Main 
 int main(int argc, char *argv[ ]) {
 
   // Gives an error message if no file is passed into the program
@@ -182,7 +207,7 @@ int main(int argc, char *argv[ ]) {
   // The current padded message block
   union block M;
   uint64_t nobits = 0;
-  enum flag status = 2;
+  enum flag status = READ;
 
   // Section 5.3.3
   uint32_t H[] = {
@@ -190,9 +215,9 @@ int main(int argc, char *argv[ ]) {
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
   // Read throughall the padded message blocks.
-  while(nextblock(&M, infile, nobits, status)){
+  while(nextblock(&M, infile, &nobits, &status)){
     // Calculate the next hash value
-    nexthash(&M, &H);
+    nexthash(&M, H);
   }
 
   for(int i = 0; i < 8; i++){
