@@ -67,6 +67,11 @@ uint32_t sig1(uint32_t x){
 }
 
 
+// Union allows you to store diffrent data types in the same memory address
+// this union is size 512bits that can be accessed as:
+// 8 x 64 bits
+// 16 x 32 bits
+// 64 x 8 bits
 
 union block {
   uint64_t six_four[8];
@@ -97,8 +102,8 @@ int nextblock(union block *M, FILE *infile, uint64_t *nobits, enum flag *status)
   // Reads from the file 1 byte at a time
   // fread takes in a pointer to a memory address, the size to be read in bytes,
   // the number of elements of size bytes and the file to be taken as input. 
-  for(*nobits = 0, i = 0; fread(&m.eight[i], 1, 1, infile) == 1; *nobits += 8) {
-    printf("%02" PRIx8, m.eight[i]);
+  for(*nobits = 0, i = 0; fread(&M.eight[i], 1, 1, infile) == 1; *nobits += 8) {
+    printf("%02" PRIx8, M.eight[i]);
   }
   
   // Print the 1bit that is added to the end and add the 7 0's to make it a byte
@@ -111,8 +116,52 @@ int nextblock(union block *M, FILE *infile, uint64_t *nobits, enum flag *status)
   printf("%016" PRIx64, nobits);
 }
 
+// Nexthash takes in the pointer to the current block and array of initial constants
 void nexthash(union block *M, uint32_t *H ){
-  
+
+  // Section 6.2.2
+  uint32_t W[64];
+  uint32_t a, b, c, d, e, f, g, h, T1, T2;
+  int t;
+
+  for (t = 0; t < 16; t++)
+    W[t] = M->three_two[t];
+
+  // Prepare the message schedule
+  for  (t = 16; t < 64; t++)
+    W[t] = sig1(W[t-2]) + W[t-7] + sig0(W[t-15]) + W[t-16];
+
+  // Initialize the eight working variables
+  a = H[0]; b = H[1]; c = H[2]; d = H[3];
+  e = H[4]; f = H[5]; g = H[6]; h = H[7];
+
+  // For t = 0 to 63
+  for (t = 0; t < 64; t++){
+    T1 = h + sig1(e) + Ch(e, f, g) + K[t] + W[t];
+    T2 = Sig0(a) + Maj(a, b, c);
+    h = g;
+    g = f;
+    f = e;
+    e = d + T1;
+    d = c;
+    c = b;
+    b = a;
+    a = T1 + T2;
+
+    H[0] = a + H[0];
+    H[1] = b + H[1];
+    H[2] = c + H[2];
+    H[3] = d + H[3];
+    H[4] = e + H[4];
+    H[5] = f + H[5];
+    H[6] = g + H[6];
+    H[7] = f + H[7];
+  }
+
+    
+
+
+
 }
 
 int main(int argc, char *argv[ ]) {
@@ -132,6 +181,8 @@ int main(int argc, char *argv[ ]) {
 
   // The current padded message block
   union block M;
+  uint64_t nobits = 0;
+  enum flag status = 2;
 
   // Section 5.3.3
   uint32_t H[] = {
@@ -139,12 +190,12 @@ int main(int argc, char *argv[ ]) {
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
   // Read throughall the padded message blocks.
-  while(nextblock(&M, infile)){
+  while(nextblock(&M, infile, nobits, status)){
     // Calculate the next hash value
     nexthash(&M, &H);
   }
 
-  for(int i = 0; i < 8, i++){
+  for(int i = 0; i < 8; i++){
     printf("%02" PRIx32, H[i]);
   }
 
